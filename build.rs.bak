@@ -1,0 +1,136 @@
+use std::env;
+use std::path::PathBuf;
+use std::process::Command;
+use std::fs;
+
+fn main() {
+    let root_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
+    let whisper_cpp_dir = root_dir.join("whisper.cpp");
+
+    // Check if whisper.cpp directory exists
+    if !whisper_cpp_dir.exists() {
+        panic!("whisper.cpp directory not found! Please clone it using: git clone https://github.com/ggerganov/whisper.cpp.git");
+    }
+
+    // Check if whisper.cpp contains the necessary files (more lenient check)
+    if !whisper_cpp_dir.join("CMakeLists.txt").exists() {
+        panic!("Invalid whisper.cpp repository! Make sure you have cloned the correct repository with: git clone https://github.com/ggerganov/whisper.cpp.git");
+    }
+
+    // Get target information
+    let target = env::var("TARGET").unwrap();
+    let is_android = target.contains("android");
+
+    println!("Building for target: {}", target);
+
+    if is_android {
+        build_for_android(&whisper_cpp_dir, &target);
+    } else {
+        // Standard build using CMake
+        let mut config = cmake::Config::new(&whisper_cpp_dir);
+        config.define("BUILD_SHARED_LIBS", "OFF");
+
+        // Build in release mode
+        config.define("CMAKE_BUILD_TYPE", "Release");
+
+        // Print build dir for debugging
+        println!("Building from directory: {}", whisper_cpp_dir.display());
+
+        // Perform the build
+        let dst = config.build();
+
+        // Link against libwhisper
+        println!("cargo:rustc-link-search=native={}/lib", dst.display());
+        println!("cargo:rustc-link-lib=static=whisper");
+
+        // Link against C++ standard library on non-Windows platforms
+        if !target.contains("windows") {
+            println!("cargo:rustc-link-lib=dylib=stdc++");
+        }
+    }
+
+    // Rebuild if whisper.cpp files change
+    println!("cargo:rerun-if-changed={}", whisper_cpp_dir.display());
+}
+
+fn build_for_android(whisper_cpp_dir: &PathBuf, target: &str) {
+    println!("Building for Android target: {}", target);
+
+    // Determine Android ABI based on Rust target
+    let abi = if target.contains("aarch64") {
+        "arm64-v8a"
+    } else if target.contains("armv7") {
+        "armeabi-v7a"
+    } else if target.contains("i686") {
+        "x86"
+    } else if target.contains("x86_64") {
+        "x86_64"
+    } else {
+        panic!("Unsupported Android target: {}", target);
+    };
+
+    // Get NDK path from environment or use default
+    let android_ndk = env::var("ANDROID_NDK_HOME")
+        .expect("ANDROID_NDK_HOME environment variable must be set");
+
+    // Check if NDK directory exists
+    if !PathBuf::from(&android_ndk).exists() {
+        panic!("Android NDK directory not found: {}", android_ndk);
+    }
+
+    // Find the correct toolchain file
+    let android_sdk = env::var("ANDROID_SDK_HOME");
+
+    let mut cmake_toolchain = if let Ok(sdk) = android_sdk {
+        let path = format!("{}/ndk-bundle/build/cmake/android.toolchain.cmake", sdk);
+        if PathBuf::from(&path).exists() {
+            path
+        } else {
+            format!("{}/build/cmake/android.toolchain.cmake", android_ndk)
+        }
+    } else {
+        format!("{}/build/cmake/android.toolchain.cmake", android_ndk)
+    };
+
+    // Check newer NDK paths if the toolchain file doesn't exist
+    if !PathBuf::from(&cmake_toolchain).exists() {
+        // Try newer NDK structure
+        let paths = [
+            format!("{}/build/cmake/android.toolchain.cmake", android_ndk),
+            format!("{}/cmake/android.toolchain.cmake", android_ndk),
+            format!("{}/toolchains/llvm/prebuilt/linux-x86_64/build/cmake/android.toolchain.cmake", android_ndk),
+        ];
+
+        for path in paths.iter() {
+            if PathBuf::from(path).exists() {
+                cmake_toolchain = path.clone();
+                break;
+            }
+        }
+    }
+
+    // Check if toolchain file exists
+    if !PathBuf::from(&cmake_toolchain).exists() {
+        panic!("Android CMake toolchain file not found. Looked in: {}\nPlease ensure your NDK installation is correct.", cmake_toolchain);
+    }
+
+    println!("Using Android CMake toolchain: {}", cmake_toolchain);
+
+    // Use NDK's CMake toolchain
+    let mut config = cmake::Config::new(whisper_cpp_dir);
+    config
+        .define("CMAKE_TOOLCHAIN_FILE", &cmake_toolchain)
+        .define("ANDROID_ABI", abi)
+        .define("ANDROID_PLATFORM", "android-21") // Minimum supported API level
+        .define("BUILD_SHARED_LIBS", "OFF")        // Build static library
+        .define("CMAKE_BUILD_TYPE", "Release");
+
+    let dst = config.build();
+
+    // Link against the static library
+    println!("cargo:rustc-link-search=native={}/lib", dst.display());
+    println!("cargo:rustc-link-lib=static=whisper");
+
+    // For Android, we need to link against a different C++ standard library
+    println!("cargo:rustc-link-lib=dylib=c++_shared");
+}

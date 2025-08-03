@@ -1,11 +1,9 @@
 use std::env;
-use std::fs::File;
-use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use whisper_rust_binding::{init_whisper, process_audio, get_model_info, free_whisper};
 
-mod audio_utils;
+mod common;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Configure logging
@@ -56,11 +54,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Model info: {}", model_info);
 
     // Load audio data
-    let mut audio_data = audio_utils::load_wav_file(wav_path.to_str().unwrap())?;
+    let mut audio_data = common::audio_utils::load_wav_file(wav_path.to_str().unwrap())?;
     println!("Loaded audio file with {} samples", audio_data.len());
 
     // Normalize audio volume
-    audio_utils::normalize_audio(&mut audio_data);
+    common::audio_utils::normalize_audio(&mut audio_data);
 
     // Process audio
     println!("Processing audio...");

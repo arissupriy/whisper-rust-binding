@@ -1,7 +1,8 @@
 use std::env;
+use std::path::Path;
 use whisper_rust_binding::{init_whisper, process_audio, get_model_info, free_whisper};
 
-mod audio_utils;
+mod common;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Configure logging
@@ -12,7 +13,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let model_path = if args.len() > 1 {
         &args[1]
     } else {
-        "models/ggml-tiny.bin"
+        "ggml-tiny.bin"
     };
 
     // Get audio file path from command line or use default
@@ -29,6 +30,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         None
     };
 
+    // Verify files exist
+    if !Path::new(model_path).exists() {
+        return Err(format!("Model file not found: {}", model_path).into());
+    }
+
+    if !Path::new(audio_path).exists() {
+        return Err(format!("Audio file not found: {}", audio_path).into());
+    }
+
     println!("Loading model from: {}", model_path);
     println!("Processing audio file: {}", audio_path);
     println!("Language: {}", language.unwrap_or("auto-detect"));
@@ -42,11 +52,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Model info: {}", model_info);
 
     // Load audio data
-    let mut audio_data = audio_utils::load_wav_file(audio_path)?;
+    let mut audio_data = common::audio_utils::load_wav_file(audio_path)?;
     println!("Loaded audio file with {} samples", audio_data.len());
 
     // Normalize audio volume
-    audio_utils::normalize_audio(&mut audio_data);
+    common::audio_utils::normalize_audio(&mut audio_data);
 
     // Process audio
     println!("Processing audio...");

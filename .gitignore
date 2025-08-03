@@ -10,3 +10,7 @@ Cargo.lock
 .idea/
 .vscode/
 models/
+output.wav
+output/
+*.mp3
+*.wav
