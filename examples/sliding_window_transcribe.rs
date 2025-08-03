@@ -1,6 +1,8 @@
 use std::env;
 use std::time::Instant;
-use whisper_rust_binding::{init_whisper, free_whisper, get_model_info};
+use std::thread;
+use std::time::Duration;
+use whisper_rust_binding::{init_whisper, free_whisper, get_model_info, process_audio};
 
 mod common;
 use common::audio_utils::{load_wav_file, normalize_audio};
@@ -9,7 +11,7 @@ fn main() {
     let args: Vec<String> = env::args().collect();
     if args.len() < 3 {
         eprintln!("Usage: {} <model_path> <audio_file> [language] [window_size_sec] [step_size_sec]", args[0]);
-        eprintln!("Example: {} ggml-tiny.bin output.wav ar 10.0 5.0", args[0]);
+        eprintln!("Example: {} ggml-tiny.bin output.wav ar 2.0 1.0", args[0]);
         std::process::exit(1);
     }
 
@@ -17,31 +19,31 @@ fn main() {
     let audio_path = &args[2];
     let language = if args.len() > 3 { Some(args[3].as_str()) } else { None };
     let window_size_sec = if args.len() > 4 { 
-        args[4].parse::<f32>().unwrap_or(10.0) 
+        args[4].parse::<f32>().unwrap_or(2.0) 
     } else { 
-        10.0 
+        2.0 
     };
     let step_size_sec = if args.len() > 5 { 
-        args[5].parse::<f32>().unwrap_or(5.0) 
+        args[5].parse::<f32>().unwrap_or(1.0) 
     } else { 
-        5.0 
+        1.0 
     };
 
-    println!("🎵 Sliding Window Transcription");
-    println!("================================");
+    println!("🎵 Sliding Window Murajaah (Review) Transcription");
+    println!("==================================================");
     println!("Model: {}", model_path);
     println!("Audio: {}", audio_path);
     println!("Language: {:?}", language);
-    println!("Window size: {:.1}s", window_size_sec);
+    println!("Window size: {:.1}s (optimal for murajaah)", window_size_sec);
     println!("Step size: {:.1}s", step_size_sec);
     println!("Overlap: {:.1}s", window_size_sec - step_size_sec);
     println!();
 
-    // Load model
-    println!("⏳ Loading model...");
+    // Load model untuk test awal
+    println!("⏳ Testing model loading...");
     let start_time = Instant::now();
     
-    let instance_id = match init_whisper(model_path) {
+    let test_instance_id = match init_whisper(model_path) {
         Ok(id) => {
             println!("✅ Model loaded! Instance ID: {}", id);
             id
@@ -53,8 +55,12 @@ fn main() {
     };
 
     let load_time = start_time.elapsed();
-    println!("📊 Model info: {}", get_model_info(instance_id).unwrap_or_else(|_| "Unknown".to_string()));
-    println!("⏱️  Model load time: {:.2}s\n", load_time.as_secs_f32());
+    println!("📊 Model info: {}", get_model_info(test_instance_id).unwrap_or_else(|_| "Unknown".to_string()));
+    println!("⏱️  Model load time: {:.2}s", load_time.as_secs_f32());
+    
+    // Free test instance
+    free_whisper(test_instance_id).ok();
+    println!("🔄 Test instance freed\n");
 
     // Load audio
     println!("🎧 Loading audio file...");
@@ -62,7 +68,6 @@ fn main() {
         Ok(data) => data,
         Err(e) => {
             eprintln!("❌ Failed to load audio: {}", e);
-            free_whisper(instance_id).ok();
             std::process::exit(1);
         }
     };
@@ -121,11 +126,20 @@ fn main() {
         println!("   📊 Samples: {} - {} ({} samples)", 
                 start_sample, end_sample, window_audio.len());
 
-        // Process this window
+        // Process this window with fresh instance
         let window_start = Instant::now();
         
-        match whisper_rust_binding::process_audio(
-            instance_id,
+        // Create fresh instance for this window to avoid state conflicts
+        let window_instance = match init_whisper(model_path) {
+            Ok(id) => id,
+            Err(e) => {
+                println!("   ❌ Failed to load model for window: {:?}", e);
+                continue;
+            }
+        };
+        
+        match process_audio(
+            window_instance,
             window_audio,
             language
         ) {
@@ -154,10 +168,15 @@ fn main() {
             }
         }
         
+        // Free window instance
+        if let Err(e) = free_whisper(window_instance) {
+            println!("   ⚠️  Warning: Failed to free window instance: {:?}", e);
+        }
+        
         println!("   {}", "-".repeat(60));
         
-        // Simulate real-time processing delay (optional)
-        // std::thread::sleep(std::time::Duration::from_millis(100));
+        // Small delay for real-time simulation and stability
+        thread::sleep(Duration::from_millis(100));
     }
 
     let total_time = overall_start.elapsed();
@@ -190,10 +209,5 @@ fn main() {
     }
     println!("{}", "=".repeat(80));
 
-    // Cleanup
-    if let Err(e) = free_whisper(instance_id) {
-        eprintln!("⚠️  Warning: Failed to free resources: {:?}", e);
-    } else {
-        println!("🧹 Resources freed successfully");
-    }
+    println!("🧹 All resources freed successfully for each window");
 }
