@@ -1,0 +1,12 @@
+/target
+/target
+**/*.rs.bk
+Cargo.lock
+*.so
+*.dylib
+*.dll
+*.a
+.DS_Store
+.idea/
+.vscode/
+models/
