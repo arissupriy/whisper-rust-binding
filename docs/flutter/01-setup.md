@@ -85,11 +85,28 @@ dev_dependencies:
 # Directory structure untuk native libraries
 android/app/src/main/jniLibs/
 ├── arm64-v8a/
-│   ├── libwhisper_rust_binding.so
-│   └── libquran_assistant_engine.so
+│   ├── libwhisper_rust_binding.so     # Main whisper library
+│   └── libc++_shared.so               # NDK C++ runtime (REQUIRED)
 └── armeabi-v7a/
-    ├── libwhisper_rust_binding.so
-    └── libquran_assistant_engine.so
+    ├── libwhisper_rust_binding.so     # Main whisper library
+    └── libc++_shared.so               # NDK C++ runtime (REQUIRED)
+```
+
+> ⚠️ **Critical**: Selalu sertakan `libc++_shared.so` karena:
+> - whisper.cpp adalah C++ library yang memerlukan C++ runtime
+> - Rust FFI dengan C++ memerlukan shared C++ library
+> - Android memerlukan explicit linking untuk dynamic libraries
+> - Tanpa file ini: `UnsatisfiedLinkError` atau `library not found`
+
+**Lokasi libc++_shared.so di NDK**:
+```bash
+# NDK r25+ (recommended path)
+$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so
+$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/arm-linux-androideabi/libc++_shared.so
+
+# NDK legacy path (fallback)
+$ANDROID_NDK_ROOT/sources/cxx-stl/llvm-libc++/libs/arm64-v8a/libc++_shared.so
+$ANDROID_NDK_ROOT/sources/cxx-stl/llvm-libc++/libs/armeabi-v7a/libc++_shared.so
 ```
 
 #### 3. android/app/build.gradle
@@ -129,35 +146,60 @@ android {
 
 ### 🔄 Flutter Rust Bridge Setup
 
-#### 1. Buat flutter_rust_bridge.yaml
+> **Note**: whisper-rust-binding adalah **standalone project** yang terpisah dari Flutter project. Flutter project hanya menggunakan hasil `.so` files melalui FRB.
+
+#### 1. Struktur Project
+
+```
+workspace/
+├── whisper-rust-binding/          # Standalone Rust project
+│   ├── src/lib.rs                 # Core whisper functions
+│   ├── Cargo.toml
+│   ├── build_android.sh          # Build script untuk .so
+│   └── target/
+│       └── aarch64-linux-android/release/
+│           └── libwhisper_rust_binding.so  # Output .so file
+│
+└── flutter_quran_app/            # Terpisah Flutter project
+    ├── lib/
+    ├── android/app/src/main/jniLibs/  # Copy .so files ke sini
+    ├── flutter_rust_bridge.yaml
+    └── pubspec.yaml
+```
+
+#### 2. Flutter Project - flutter_rust_bridge.yaml
 
 ```yaml
-# flutter_rust_bridge.yaml
+# Di flutter_quran_app/flutter_rust_bridge.yaml
 rust_input: 
-  - "../../whisper-rust-binding/src/lib.rs"
-  - "../../quran_assistant_engine/src/lib.rs"
+  - "../whisper-rust-binding/src/lib.rs"  # Reference ke standalone project
 dart_output: "lib/generated"
 c_output: "ios/Runner"
-rust_crate_dir: "../../"
+rust_crate_dir: "../whisper-rust-binding/"  # Path ke standalone project
 extra_headers: |
-  // Extra headers for mobile optimization
+  // Headers for mobile optimization
   #ifdef __ANDROID__
   #include <android/log.h>
   #endif
 ```
 
-#### 2. Generate Bindings
+#### 3. Build & Integration Process
 
 ```bash
-# Generate Flutter Rust Bridge bindings
+# Step 1: Build whisper-rust-binding standalone
+cd whisper-rust-binding/
+cargo build --target aarch64-linux-android --release
+
+# Step 2: Copy .so files ke Flutter project
+cp target/aarch64-linux-android/release/libwhisper_rust_binding.so \
+   ../flutter_quran_app/android/app/src/main/jniLibs/arm64-v8a/
+
+# Step 3: Generate FRB bindings di Flutter project
+cd ../flutter_quran_app/
 flutter_rust_bridge_codegen generate
 
-# Build Rust libraries for Android
-cd ../../whisper-rust-binding
-./build_mobile_android.sh
-
-cd ../../quran_assistant_engine  
-flutter_rust_bridge_codegen build-android
+# Step 4: Build Flutter app
+flutter build apk
 ```
 
 ### 📁 Project Structure
@@ -255,20 +297,58 @@ flutter build apk --debug
 
 **Issue**: Native library not found
 ```bash
-# Solution: Copy libraries correctly
-cp ../whisper-rust-binding/target/aarch64-linux-android/release/libwhisper_rust_binding.so \
-   android/app/src/main/jniLibs/arm64-v8a/
+# Solution: Ensure .so files are copied correctly from standalone project
+cd whisper-rust-binding/
+cargo build --target aarch64-linux-android --release
+
+# Copy ke Flutter project
+cp target/aarch64-linux-android/release/libwhisper_rust_binding.so \
+   ../flutter_quran_app/android/app/src/main/jniLibs/arm64-v8a/
+
+# IMPORTANT: Copy libc++_shared.so juga
+cp $ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so \
+   ../flutter_quran_app/android/app/src/main/jniLibs/arm64-v8a/
+```
+
+**Issue**: UnsatisfiedLinkError atau library load failed
+```bash
+# Solution: Pastikan libc++_shared.so ada
+ls -la android/app/src/main/jniLibs/arm64-v8a/
+# Harus ada:
+# - libwhisper_rust_binding.so
+# - libc++_shared.so
+
+# Check dependencies dengan objdump
+objdump -p android/app/src/main/jniLibs/arm64-v8a/libwhisper_rust_binding.so | grep NEEDED
 ```
 
 **Issue**: Permission denied for audio recording
 ```dart
-// Solution: Check permissions in runtime
+// Solution: Check permissions in runtime (di Flutter project)
 await Permission.microphone.request();
 ```
 
 **Issue**: FRB generation fails
 ```bash
-# Solution: Clean and regenerate
+# Solution: Clean and regenerate (di Flutter project)
+cd flutter_quran_app/
 flutter clean
 flutter_rust_bridge_codegen generate --force
+```
+
+**Issue**: Rust crate path not found
+```yaml
+# Solution: Fix path di flutter_rust_bridge.yaml
+rust_crate_dir: "../whisper-rust-binding/"  # Correct relative path
+```
+
+**Issue**: App crashes on startup with "library not found"
+```bash
+# Solution: Verify ALL required libraries
+# 1. Main library
+file android/app/src/main/jniLibs/arm64-v8a/libwhisper_rust_binding.so
+# 2. C++ runtime
+file android/app/src/main/jniLibs/arm64-v8a/libc++_shared.so
+# 3. Check Android logs
+adb logcat | grep -i "dlopen\|library\|whisper"
 ```

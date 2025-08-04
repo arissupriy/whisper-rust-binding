@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [lib]
-crate-type = ["cdylib"]  # Focus on .so generation for Flutter
+crate-type = ["cdylib", "rlib"]  # Add rlib for examples and tests
 name = "whisper_rust_binding"
 
 [dependencies]
@@ -36,11 +36,43 @@ hound = "3.5.0"
 default = []
 android-jni = ["jni"]
 
-# Examples
+# Examples with organized paths
+[[example]]
+name = "simple_test"
+path = "examples/01_basic/simple_test.rs"
+
+[[example]]
+name = "test_model_only"
+path = "examples/01_basic/test_model_only.rs"
+
 [[example]]
 name = "test_transcription"
-path = "examples/test_transcription.rs"
+path = "examples/01_basic/test_transcription.rs"
 
 [[example]]
 name = "transcribe_file"
-path = "examples/transcribe_file.rs"
+path = "examples/02_production/transcribe_file.rs"
+
+[[example]]
+name = "production_test"
+path = "examples/02_production/production_test.rs"
+
+[[example]]
+name = "test_direct_whisper"
+path = "examples/02_production/test_direct_whisper.rs"
+
+[[example]]
+name = "flutter_api_demo"
+path = "examples/03_flutter/flutter_api_demo.rs"
+
+[[example]]
+name = "dual_project_integration"
+path = "examples/03_flutter/dual_project_integration.rs"
+
+[[example]]
+name = "simple_sliding_window"
+path = "examples/04_advanced/simple_sliding_window.rs"
+
+[[example]]
+name = "hybrid_sliding_window"
+path = "examples/04_advanced/hybrid_sliding_window.rs"

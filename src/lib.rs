@@ -220,10 +220,25 @@ mod ffi {
         pub new_segment_callback_user_data: *mut c_void,
         pub progress_callback: *mut c_void,
         pub progress_callback_user_data: *mut c_void,
-
-        // Additional callback
         pub encoder_begin_callback: *mut c_void,
         pub encoder_begin_callback_user_data: *mut c_void,
+
+        // Additional callbacks missing from our struct
+        pub abort_callback: *mut c_void,
+        pub abort_callback_user_data: *mut c_void,
+        pub logits_filter_callback: *mut c_void,
+        pub logits_filter_callback_user_data: *mut c_void,
+
+        // Grammar parameters
+        pub grammar_rules: *const *const c_void,
+        pub n_grammar_rules: usize,
+        pub i_start_rule: usize,
+        pub grammar_penalty: f32,
+
+        // VAD parameters
+        pub vad: bool,
+        pub vad_model_path: *const c_char,
+        pub vad_params: WhisperVadParams,
     }
 
     #[repr(C)]
@@ -235,6 +250,16 @@ mod ffi {
     pub struct WhisperBeamSearchParams {
         pub beam_size: c_int,
         pub patience: f32,
+    }
+
+    #[repr(C)]
+    pub struct WhisperVadParams {
+        pub threshold: f32,
+        pub min_speech_duration_ms: c_int,
+        pub min_silence_duration_ms: c_int,
+        pub max_speech_duration_s: f32,
+        pub speech_pad_ms: c_int,
+        pub samples_overlap: f32,
     }
 }
 
@@ -315,6 +340,28 @@ impl WhisperContext {
         params.progress_callback_user_data = null_mut();
         params.encoder_begin_callback = null_mut();
         params.encoder_begin_callback_user_data = null_mut();
+        
+        // Initialize new fields that were missing
+        params.abort_callback = null_mut();
+        params.abort_callback_user_data = null_mut();
+        params.logits_filter_callback = null_mut();
+        params.logits_filter_callback_user_data = null_mut();
+        params.grammar_rules = null_mut();
+        params.n_grammar_rules = 0;
+        params.i_start_rule = 0;
+        params.grammar_penalty = 0.0;
+        params.vad = false;
+        params.vad_model_path = null_mut();
+        
+        // Initialize VAD params to default values
+        params.vad_params = ffi::WhisperVadParams {
+            threshold: 0.5,
+            min_speech_duration_ms: 250,
+            min_silence_duration_ms: 2000,
+            max_speech_duration_s: 30.0,
+            speech_pad_ms: 30,
+            samples_overlap: 0.0,
+        };
 
         // Set language if provided
         let lang_c_string: Option<CString> = language.map(|lang| CString::new(lang).unwrap_or_default());
