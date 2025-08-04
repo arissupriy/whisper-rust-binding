@@ -47,8 +47,10 @@ fn main() {
         // Link against C++ standard library on non-Windows platforms
         if !target.contains("windows") {
             println!("cargo:rustc-link-lib=dylib=stdc++");
-            // Link against OpenMP for parallel processing
-            println!("cargo:rustc-link-lib=dylib=gomp");
+            // Link against OpenMP for parallel processing (only on non-Android platforms)
+            if !is_android {
+                println!("cargo:rustc-link-lib=dylib=gomp");
+            }
         }
     }
 
@@ -139,6 +141,6 @@ fn build_for_android(whisper_cpp_dir: &PathBuf, target: &str) {
 
     // For Android, we need to link against a different C++ standard library
     println!("cargo:rustc-link-lib=dylib=c++_shared");
-    // Link against OpenMP for parallel processing
-    println!("cargo:rustc-link-lib=dylib=gomp");
+    // Note: OpenMP (gomp) is not available in Android NDK, so we skip it
+    println!("Android build: Skipping OpenMP linking (not available in NDK)");
 }

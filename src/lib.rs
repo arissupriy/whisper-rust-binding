@@ -7,6 +7,18 @@ pub use android::init_android_logger;
 // Mock implementation for testing without real models
 pub mod mock;
 
+// Real-time transcriber for Flutter integration
+pub mod realtime_transcriber;
+
+// Production-ready Flutter transcriber
+pub mod flutter_transcriber;
+
+// Flutter Rust Bridge API
+pub mod flutter_api;
+
+// Quran integration for dual-project setup
+pub mod quran_integration;
+
 use std::ffi::{c_char, c_float, c_int, c_void, CStr, CString};
 use std::sync::{Arc, Mutex};
 use std::ptr::null_mut;
@@ -28,6 +40,9 @@ pub enum WhisperError {
 
     #[error("Failed to process audio: {0}")]
     ProcessingError(String),
+    
+    #[error("Invalid parameter: {0}")]
+    InvalidParameter(String),
 
     #[error("Invalid audio data")]
     InvalidAudioData,
@@ -800,6 +815,12 @@ pub fn validate_word(word: &str, global_data_words: &[&str]) -> bool {
         c_word_ptrs.len() as i32
     ) }
 }
+
+// Export Flutter API
+pub use flutter_api::*;
+
+// Export Quran integration API
+pub use quran_integration::*;
 
 #[cfg(test)]
 mod tests {

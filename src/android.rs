@@ -15,7 +15,7 @@ use crate::{free_whisper, init_whisper, is_valid_model, process_audio, process_a
 pub fn init_android_logger() {
     android_logger::init_once(
         android_logger::Config::default()
-            .with_min_level(log::Level::Info)
+            .with_max_level(log::LevelFilter::Info)  // Updated API
             .with_tag("WhisperRust"),
     );
 }

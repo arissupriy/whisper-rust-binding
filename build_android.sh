@@ -1,10 +1,23 @@
 #!/bin/bash
 
-# Whisper Rust Binding - Android Build Script
+# 📱 Whisper Rust Binding - Android Build Script
+# Compatible with quran_assistant_engine (FRB-generated)
 # This script builds the whisper-rust-binding library for all Android architectures
 
 # Exit on any error
 set -e
+
+# Configuration - Updated with your actual NDK version for mobile development
+ANDROID_SDK_ROOT=~/Android/Sdk
+NDK_VERSION="29.0.13599879"  # Your actual NDK version (detected)
+MIN_SDK_VERSION=21
+TARGET_SDK_VERSION=34        # Updated to latest for mobile
+
+# Mobile-focused build targets (removed emulator targets)
+MOBILE_TARGETS=(
+    "aarch64-linux-android"      # ARM64 - Primary for modern mobile devices
+    "armv7-linux-androideabi"    # ARMv7 - Secondary for older mobile devices
+)
 
 # Colors for output
 GREEN="\033[0;32m"
@@ -81,36 +94,70 @@ check_requirements() {
 
 # Function to check Android NDK
 check_android_ndk() {
-    PRINT_SECTION "Checking Android NDK"
+    PRINT_SECTION "Checking Android NDK setup for FRB compatibility"
     
-    if [ -z "$ANDROID_NDK_HOME" ]; then
-        PRINT_ERROR "ANDROID_NDK_HOME environment variable is not set."
-        echo -e "${YELLOW}Please set it to the path of your Android NDK installation.${NC}"
-        echo -e "${YELLOW}Example: export ANDROID_NDK_HOME=/path/to/android-ndk${NC}"
-        echo -e "${YELLOW}You can download Android NDK from: https://developer.android.com/ndk/downloads${NC}"
+    # Expand tilde to home directory
+    ANDROID_SDK_ROOT=$(eval echo $ANDROID_SDK_ROOT)
+    
+    if [ ! -d "$ANDROID_SDK_ROOT" ]; then
+        PRINT_ERROR "Android SDK not found at: $ANDROID_SDK_ROOT"
+        echo -e "${YELLOW}Please verify your Android SDK installation path${NC}"
         exit 1
     fi
     
-    if [ ! -d "$ANDROID_NDK_HOME" ]; then
-        PRINT_ERROR "ANDROID_NDK_HOME directory does not exist: $ANDROID_NDK_HOME"
+    export ANDROID_HOME="$ANDROID_SDK_ROOT"
+    export ANDROID_SDK_ROOT="$ANDROID_SDK_ROOT"
+    PRINT_SUCCESS "Android SDK found: $ANDROID_SDK_ROOT"
+    
+    # Check for Android NDK in SDK directory
+    NDK_PATH="$ANDROID_SDK_ROOT/ndk"
+    if [ ! -d "$NDK_PATH" ]; then
+        PRINT_ERROR "NDK directory not found at: $NDK_PATH"
+        echo -e "${YELLOW}Please install Android NDK through Android Studio or SDK Manager${NC}"
         exit 1
     fi
     
-    # Check if NDK seems valid
-    if [ ! -f "$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake" ]; then
+    # Find available NDK versions
+    available_ndks=($(ls "$NDK_PATH" 2>/dev/null))
+    if [ ${#available_ndks[@]} -eq 0 ]; then
+        PRINT_ERROR "No NDK versions found in $NDK_PATH"
+        exit 1
+    fi
+    
+    # Use specified NDK version or first available
+    if [ -d "$NDK_PATH/$NDK_VERSION" ]; then
+        export ANDROID_NDK_HOME="$NDK_PATH/$NDK_VERSION"
+        export NDK_HOME="$NDK_PATH/$NDK_VERSION"
+        PRINT_SUCCESS "Using specified NDK version: $NDK_VERSION"
+    else
+        NDK_VERSION="${available_ndks[0]}"
+        export ANDROID_NDK_HOME="$NDK_PATH/$NDK_VERSION"
+        export NDK_HOME="$NDK_PATH/$NDK_VERSION"
+        PRINT_WARNING "Specified NDK version not found, using: $NDK_VERSION"
+    fi
+    
+    # Verify NDK installation
+    if [ ! -f "$NDK_HOME/build/cmake/android.toolchain.cmake" ]; then
         PRINT_ERROR "Invalid Android NDK installation. Missing toolchain file."
         exit 1
     fi
     
     local ndk_version=""
-    if [ -f "$ANDROID_NDK_HOME/source.properties" ]; then
-        ndk_version=$(grep "Pkg.Revision" "$ANDROID_NDK_HOME/source.properties" | cut -d'=' -f2 | tr -d ' ')
+    if [ -f "$NDK_HOME/source.properties" ]; then
+        ndk_version=$(grep "Pkg.Revision" "$NDK_HOME/source.properties" | cut -d'=' -f2 | tr -d ' ')
     fi
     
-    PRINT_SUCCESS "Android NDK found: $ANDROID_NDK_HOME"
+    PRINT_SUCCESS "Android NDK validated: $NDK_HOME"
     if [ -n "$ndk_version" ]; then
         echo -e "  Version: ${BLUE}$ndk_version${NC}"
     fi
+    
+    # Export variables for compatibility with quran_assistant_engine FRB builds
+    echo -e "${BLUE}Environment variables set for FRB compatibility:${NC}"
+    echo -e "  ANDROID_HOME=$ANDROID_HOME"
+    echo -e "  ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+    echo -e "  NDK_HOME=$NDK_HOME"
+    echo -e "  ANDROID_NDK_HOME=$ANDROID_NDK_HOME"
 }
 
 # Function to setup Android targets
